@@ -13,7 +13,8 @@ import time
 from socket import *
 from socket_comm import *
 
-HOST = '192.168.0.100'
+HOST = '192.168.0.31'
+#HOST = '192.168.11.220'
 #HOST = '192.168.0.30'
 PORT = 9999
 
@@ -65,6 +66,7 @@ class Kinect:
         self.presendmotion = ''
         self.humanloc = 0
         self.run_video = True
+        self.max_motion = 'default'
 
 
         if self.socket_enable:
@@ -139,30 +141,33 @@ class Kinect:
             # Press q key to stop
             if cv2.waitKey(1) == 27:
                 break
-
+    # Mouse click event for checking pixel coordination in opencv window
     def mouse_event(self, event, x, y, flags, param):
         if event == cv2.EVENT_FLAG_LBUTTON:
             print(x, y, self.depth_image[y][x])
 
+    # Video I/O is running in a single thread module
     def stream_video(self):
 
         print("Start Kinect video thread")
-        while self.run_video:
-
-            capture = self.device.update()
-            ret1, image = capture.get_color_image()
-            # image = cv2.flip(image,1)
-            ret2, depth_image = capture.get_transformed_depth_image()
-            ret3, color_depth_image = capture.get_transformed_colored_depth_image()
-
-            self.lock.acquire()
+        while self.run_video: # running flag
+            try:
+                capture = self.device.update() # get kinect image datas
+                ret1, image = capture.get_color_image() # get RGB frame
+                # image = cv2.flip(image,1)
+                ret2, depth_image = capture.get_transformed_depth_image() # get depth image [unit : mm]
+                ret3, color_depth_image = capture.get_transformed_colored_depth_image() # get colored depth image
+            except:
+                continue
+            time.sleep(0.01) # waiting for kinetic
+            self.lock.acquire()  # thread mutex lock for synchronizing variables with main thread
             if ret1:
                 self.image = image
             if ret2:
                 self.depth_image = depth_image.astype('int')
             if ret3:
                 self.color_depth_image = color_depth_image
-            self.lock.release()
+            self.lock.release() # thread mutex unlock
         self.device.close()
 
         print("kinect video thread is terminated.")
@@ -176,21 +181,25 @@ class Kinect:
         cv2.namedWindow('colored depth image')
         cv2.setMouseCallback('colored depth image', self.mouse_event)
 
+        # socket mode connected with kinetic controller through TCP/IP
         if self.socket_enable:
+            # create a thread to receive message from kinetic controller
             receiver = Thread(target=self.receive, args=(self.clientSock,))
             receiver.daemon = True
-            receiver.start()
+            receiver.start() # thread start
 
+        # kinect thread start
         t = Thread(target = self.stream_video)
         t.start()
 
         self.cur = time.time()
         self.pre = self.cur
 
+        # motion counting dictionary
         motion_dict = {"up": 0, "down" : 0, "left" : 0, "right" : 0, "push" : 0, "pull" : 0}
-        self.cur_modetime = time.time()
+        self.cur_modetime = time.time() # Timer variable (P2P mode <----N seconds----> Body gesture mode)
         self.pre_modetime = self.cur_modetime
-        self.poseflag = False
+        self.poseflag = False # if poseflag is set, Body gesture mode starts
         if self.socket_enable:
             self.send(sock=self.clientSock, senddata="start! Hi")
         while True:
@@ -198,6 +207,7 @@ class Kinect:
             if self.image is None:
                 continue
 
+            # thread mutex lock to get image data from azure kinect thread
             self.lock.acquire()
             color_image = self.image
             depth_image = self.depth_image
@@ -315,8 +325,9 @@ class Kinect:
 
                     if self.humanloc < self.detect_divider // 2 + 2 and self.humanloc > self.detect_divider // 2 - 2:
                         self.cur = time.time()
-                        if self.cur_modetime - self.pre_modetime > 10:
+                        if self.cur_modetime - self.pre_modetime > 5:
                             self.poseflag = True
+                            self.send(sock=self.clientSock, senddata='init')
 
                         if self.poseflag:
                             mp_drawing.draw_landmarks(
@@ -353,7 +364,7 @@ class Kinect:
                                 motion_dict[self.motionstate] += 1
                                 cv2.putText(color_image, self.motionstate, (width // 10, height // 10),
                                             cv2.FONT_HERSHEY_SIMPLEX, self.fontsize, self.fontcolor, 2, cv2.LINE_AA)
-                            # Push action
+
                             elif (rightHip_depth - righthand_depth > 350) and (leftHip_depth - lefthand_depth > 350)\
                                 and lefthand_pos[1] > nose_pos[1] and nose_pos[1] > rightEye[1]\
                                 and lefthand_pos[1] < (leftShoulder_pos[1] + leftHip_pos[1]) / 2 \
@@ -365,8 +376,9 @@ class Kinect:
                                             cv2.FONT_HERSHEY_SIMPLEX, self.fontsize, self.fontcolor, 2, cv2.LINE_AA)
 
                             elif ( 100 < rightShoulder_depth - righthand_depth < 350) and ( 100 < leftShoulder_depth - lefthand_depth < 350) \
-                                and  leftShoulder_pos[1] < lefthand_pos[1] < leftHip_pos[1] \
-                                and  rightShoulder_pos[1] < righthand_pos[1] < rightHip_pos[1]:
+                                    and elbowLtheta > 90 and elbowRtheta > 90 :
+                                    #and  leftShoulder_pos[1] < lefthand_pos[1] < leftHip_pos[1] \
+                                    #and  rightShoulder_pos[1] < righthand_pos[1] < rightHip_pos[1]:
                                 if self.prestate == "up" or self.motionstate == "down":
                                     self.motionstate = "down"
                                     motion_dict[self.motionstate] += 1
@@ -389,8 +401,9 @@ class Kinect:
                                 max_motion = max(motion_dict,key=motion_dict.get)
                                 print("Count : ", motion_dict)
                                 if motion_dict[max_motion] > 15:
+
                                     if self.socket_enable and self.rxflag:
-                                        sendmotion = 'mexecute '+max_motion
+                                        sendmotion = 'mexecute1 '+max_motion
                                         if self.presendmotion != sendmotion:
 
                                             print("Send : ", max_motion)
@@ -405,7 +418,7 @@ class Kinect:
                                     motion_dict[key] = 0
 
                             if self.prestate != self.motionstate:
-                                self.prestate = self.motionstat
+                                self.prestate = self.motionstate
 
                     else:
                         self.pre_modetime = self.cur_modetime
@@ -423,7 +436,7 @@ class Kinect:
             startline = (width - detect_width) // 2
 
             for i in range(self.detect_divider):
-                if i == (self.detect_divider // 2 -2)  or i == (self.detect_divider // 2 + 2):
+                if i == (self.detect_divider // 2 - 2)  or i == (self.detect_divider // 2 + 2):
                     cv2.line(color_image,(startline + detect_width//self.detect_divider*i,0), (startline + detect_width//self.detect_divider*i,height), (10,200,10), 2)
                 else:
                     cv2.line(color_image,(startline + detect_width//self.detect_divider*i,0), (startline + detect_width//self.detect_divider*i,height), (150, 150, 150), 1)
@@ -437,7 +450,8 @@ class Kinect:
                 self.socket_enable = False
                 self.lock.release()
                 t.join()
-                receiver.join()
+                if self.socket_enable:
+                    receiver.join()
                 print("Program is terminated")
                 break
 
