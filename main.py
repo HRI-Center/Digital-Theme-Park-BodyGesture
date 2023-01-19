@@ -164,7 +164,7 @@ class Kinect:
             if ret1:
                 self.image = image
             if ret2:
-                self.depth_image = depth_image.astype('int')
+                self.depth_image = depth_image.astype('int') # type casting unsigned short[raw data from azure kinect] to int
             if ret3:
                 self.color_depth_image = color_depth_image
             self.lock.release() # thread mutex unlock
@@ -190,7 +190,7 @@ class Kinect:
 
         # kinect thread start
         t = Thread(target = self.stream_video)
-        t.start()
+        t.start() # thread start
 
         self.cur = time.time()
         self.pre = self.cur
@@ -200,8 +200,11 @@ class Kinect:
         self.cur_modetime = time.time() # Timer variable (P2P mode <----N seconds----> Body gesture mode)
         self.pre_modetime = self.cur_modetime
         self.poseflag = False # if poseflag is set, Body gesture mode starts
+
+        # Send message("start! Hi") to kinect controller to test socket I/O at first.
         if self.socket_enable:
             self.send(sock=self.clientSock, senddata="start! Hi")
+
         while True:
             self.cur_modetime = time.time()
             if self.image is None:
@@ -214,15 +217,19 @@ class Kinect:
             color_depth_image = self.color_depth_image
             self.lock.release()
 
+            # get frame size of image
             height, width, _ = color_image.shape
+
+            # width of range 1 ~ 10 lines for tracking location of human
             detect_width = int(round(self.detect_ratio * width))
-            results = pose.process(color_image)
+            results = pose.process(color_image) # calculation joint from RGB-image data using MediaPipe
 
             if results.pose_landmarks:
-                # Draw the pose annotation on the image.
-                #image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
+                # Draw the pose annotation on the image.
                 landmarks = results.pose_landmarks.landmark
+
+                # get x, y values of each joints
                 nose = [landmarks[mp_pose.PoseLandmark.NOSE].x,landmarks[mp_pose.PoseLandmark.NOSE].y]
                 leftEye = [landmarks[mp_pose.PoseLandmark.LEFT_EYE.value].x,
                             landmarks[mp_pose.PoseLandmark.LEFT_EYE.value].y]
@@ -247,11 +254,14 @@ class Kinect:
                 rightWrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,
                              landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
 
+                # --- calcuation of angle of each joints-----
                 shoulderLtheta = int(calculate_angle(leftElbow, leftShoulder,leftHip))
                 shoulderRtheta = int(calculate_angle(rightElbow, rightShoulder, rightHip))
                 elbowLtheta = int(calculate_angle(leftWrist, leftElbow, leftShoulder))
                 elbowRtheta = int(calculate_angle(rightWrist, rightElbow, rightShoulder))
 
+
+                # -----Display each joints angle
                 cv2.putText(color_image, str(elbowLtheta),
                             tuple(np.multiply(leftElbow, [width, height]).astype(int)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA
@@ -272,8 +282,7 @@ class Kinect:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA
                             )
 
-                try:
-
+                try: # use 'try' sentence in case that each joint has null value(null value means that the joints are not detected)
                     nose_pos = tuple(np.multiply(nose, [width, height]).astype(int))
                     lefthand_pos = tuple(np.multiply(leftWrist, [width, height]).astype(int))
                     lefthand_depth = depth_image[lefthand_pos[1]][lefthand_pos[0]]
@@ -327,7 +336,6 @@ class Kinect:
                         self.cur = time.time()
                         if self.cur_modetime - self.pre_modetime > 5:
                             self.poseflag = True
-                            self.send(sock=self.clientSock, senddata='init')
 
                         if self.poseflag:
                             mp_drawing.draw_landmarks(
@@ -365,6 +373,7 @@ class Kinect:
                                 cv2.putText(color_image, self.motionstate, (width // 10, height // 10),
                                             cv2.FONT_HERSHEY_SIMPLEX, self.fontsize, self.fontcolor, 2, cv2.LINE_AA)
 
+                            # Pull
                             elif (rightHip_depth - righthand_depth > 350) and (leftHip_depth - lefthand_depth > 350)\
                                 and lefthand_pos[1] > nose_pos[1] and nose_pos[1] > rightEye[1]\
                                 and lefthand_pos[1] < (leftShoulder_pos[1] + leftHip_pos[1]) / 2 \
@@ -375,6 +384,7 @@ class Kinect:
                                 cv2.putText(color_image, self.motionstate, (width // 10, height // 10),
                                             cv2.FONT_HERSHEY_SIMPLEX, self.fontsize, self.fontcolor, 2, cv2.LINE_AA)
 
+                            # Down
                             elif ( 100 < rightShoulder_depth - righthand_depth < 350) and ( 100 < leftShoulder_depth - lefthand_depth < 350) \
                                     and elbowLtheta > 90 and elbowRtheta > 90 :
                                     #and  leftShoulder_pos[1] < lefthand_pos[1] < leftHip_pos[1] \
@@ -385,6 +395,7 @@ class Kinect:
                                     cv2.putText(color_image, self.motionstate, (width // 10, height // 10),
                                                 cv2.FONT_HERSHEY_SIMPLEX, self.fontsize, self.fontcolor, 2, cv2.LINE_AA)
 
+                            # Push
                             elif (rightShoulder_depth - righthand_depth < 200) and (leftShoulder_depth - lefthand_depth < 200) \
                                 and (lefthand_pos[1] > leftShoulder_pos[1]) and elbowLtheta < 70 \
                                 and (righthand_pos[1] > rightShoulder_pos[1]) and elbowRtheta < 70:
@@ -401,11 +412,9 @@ class Kinect:
                                 max_motion = max(motion_dict,key=motion_dict.get)
                                 print("Count : ", motion_dict)
                                 if motion_dict[max_motion] > 15:
-
                                     if self.socket_enable and self.rxflag:
                                         sendmotion = 'mexecute1 '+max_motion
                                         if self.presendmotion != sendmotion:
-
                                             print("Send : ", max_motion)
                                             self.send(sock=self.clientSock, senddata=sendmotion)
                                             self.presendmotion = sendmotion
