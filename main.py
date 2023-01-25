@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import math
 import mediapipe as mp
-from yolo import *
+
 from threading import Thread
 sys.path.insert(1, '../')
 import pykinect_azure as pykinect
