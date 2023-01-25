@@ -13,11 +13,12 @@ import time
 from socket import *
 from socket_comm import *
 
+
+# socket 통신 IP 주소
 HOST = '192.168.0.31'
-#HOST = '192.168.11.220'
-#HOST = '192.168.0.30'
 PORT = 9999
 
+# 각 joint 각도 계산 함수.
 def calculate_angle(a: object, b: object, c: object) -> object:
     a = np.array(a)  # First
     b = np.array(b)  # Mid
@@ -57,7 +58,6 @@ class Kinect:
         self.fontsize = 2
         self.colors = [(255, 255, 0), (0, 255, 0), (0, 255, 255), (255, 0, 0)]
         self.is_cuda = True
-        self.net = build_model(self.is_cuda)
         self.detect_ratio = round(160 / 280 * math.tan(math.radians(45)),4)
         self.detect_divider = 10
         self.lock = threading.Lock()
@@ -68,7 +68,7 @@ class Kinect:
         self.run_video = True
         self.max_motion = 'default'
 
-
+        # socket enable 은 class 생성시 코드를 수정하여 개발자가 on-off
         if self.socket_enable:
             self.clientSock = socket(AF_INET, SOCK_STREAM)
             self.clientSock.connect((HOST, PORT))
@@ -80,14 +80,11 @@ class Kinect:
     def receive(self, sock):
 
         while self.socket_enable:
-            recvdata = sock.recv(1024)
-            #if not recvdata:
-            #    #print('no receive data')
-            #    sock.close()
-            #    break
-            #else:
-            msg = recvdata.decode('utf-8')
+            recvdata = sock.recv(1024)      # 1024 버퍼 크기 데이터 receive
+            msg = recvdata.decode('utf-8')  # byte 데이터 decode
             print('받은 데이터:', msg)
+
+            # kinectic display로 부터 motion end, P2P End 신호를 받으면 rxflag set
             if self.poseflag:
                 if 'Motion End' in msg:
                     self.lock.acquire()
@@ -102,45 +99,6 @@ class Kinect:
             time.sleep(1)
         sock.close()
 
-            #self.send_func(sock)
-
-    def send_func(self, sock):
-        #temp = input("전송대기중....")
-        senddata = 'ok'
-        sock.send(senddata.encode('utf-8'))
-        print('전송완료')
-
-    def run(self):
-        receiver = threading.Thread(target=self.receive, args=(self.clientSock,))
-        receiver.daemon = True
-        receiver.start()
-
-    def run_kinect(self):
-
-        cv2.namedWindow('Color image with skeleton', cv2.WINDOW_NORMAL)
-        while True:
-            # Get capture
-            capture = self.device.update()
-
-            # Get body tracker frame
-            body_frame = self.bodyTracker.update()
-
-            # Get the color image
-            ret, color_image = capture.get_color_image()
-            _, depth_image = capture.get_colored_depth_image()
-            if not ret:
-                print("fail to get frame")
-                continue
-
-            # Draw the skeletons into the color image
-            color_skeleton = body_frame.draw_bodies(color_image, pykinect.K4A_CALIBRATION_TYPE_COLOR)
-
-            # Overlay body segmentation on depth image
-            cv2.imshow('Color image with skeleton', color_skeleton)
-
-            # Press q key to stop
-            if cv2.waitKey(1) == 27:
-                break
     # Mouse click event for checking pixel coordination in opencv window
     def mouse_event(self, event, x, y, flags, param):
         if event == cv2.EVENT_FLAG_LBUTTON:
@@ -451,7 +409,7 @@ class Kinect:
                             # kinetic display에 보내는 통신 주기 용 timer 변수 interval
                             interval = self.cur - self.pre
 
-                            # 원할한 통신을 위해 인식된 Motion은 1초에 한번씩만 kinetic display로 보냄.
+                            # Motion은 1초에 한번씩만 kinetic display로 보내기로 약속됨.
                             if interval > 1:
                                 self.pre = self.cur
 
