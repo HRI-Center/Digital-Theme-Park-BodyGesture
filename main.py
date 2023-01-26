@@ -11,7 +11,7 @@ sys.path.insert(1, '../')
 import pykinect_azure as pykinect
 import time
 from socket import *
-from socket_comm import *
+
 
 
 # socket 통신 IP 주소
@@ -477,18 +477,18 @@ class Kinect:
             # ESC key 입력
             if cv2.waitKey(10) & 0xFF == 27:
                 self.lock.acquire()
-                self.run_video = False      # stream video thread 종료
-                self.socket_enable = False  # socket thread 종료
+                self.run_video = False      # stream video thread  while loop false
+                self.socket_enable = False  # socket thread while loop false
                 self.lock.release()
-                t.join()
+                t.join() # stream video thread 종료
                 if self.socket_enable:
-                    receiver.join()
+                    receiver.join() # socket 수신 thread 종료
                 print("Program is terminated")
                 break
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    azure = Kinect(body_tracking=False, socket_enable=True)
+    azure = Kinect(body_tracking=False, socket_enable=False)
     azure.run_mediapipe()
 
 
