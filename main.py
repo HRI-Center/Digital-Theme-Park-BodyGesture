@@ -12,8 +12,6 @@ import pykinect_azure as pykinect
 import time
 from socket import *
 
-
-
 # socket 통신 IP 주소
 HOST = '192.168.0.31'
 PORT = 9999
