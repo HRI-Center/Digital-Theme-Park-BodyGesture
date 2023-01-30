@@ -62,6 +62,7 @@ class Kinect:
         self.socket_enable = socket_enable
         self.rxflag = True
         self.presendmotion = ''
+        self.preP2P = None
         self.humanloc = 0
         self.run_video = True
         self.max_motion = 'default'
@@ -84,12 +85,12 @@ class Kinect:
 
             # kinectic display로 부터 motion end, P2P End 신호를 받으면 rxflag set
             if self.poseflag:
-                if 'Motion End' in msg:
+                if 'Motion End' in msg: # 모션 용 프로토콜
                     self.lock.acquire()
                     self.rxflag = True
                     self.lock.release()
             else:
-                if 'P2P End' in msg:
+                if 'P2P End' in msg: # 위치 추적 용 프로토콜
                     self.lock.acquire()
                     self.rxflag = True
                     self.lock.release()
@@ -281,13 +282,15 @@ class Kinect:
                     # 사람 위치 데이터는 10 구역으로 나누어 판별 후 Kinectic Display에 전송
                     if x > (width + detect_width)/2:
                         self.humanloc = self.detect_divider # self.detect_divider = 10 / 10 구역으로 설정됨.
+
                     elif x < (width - detect_width)/2:
-                        self.humanloc = 1
+                        #self.humanloc = 1
+                        pass
                     else:
                         # human loc x 좌표 값 1 ~ 10 사이로 normalization
                         self. humanloc = (x - (width - detect_width)/2) / detect_width * (self.detect_divider-1) + 1
                         self.humanloc = int(self.humanloc)
-
+                    self.humanloc = 11 - self.humanloc
                     # 좌표 값 Display
                     cv2.putText(color_image, "Human Coordination:" + str(self.humanloc),
                                 (width // 10, height // 10 * 9),
@@ -303,10 +306,10 @@ class Kinect:
 
                         # 녹색 구간내 들어올 경우 timer 시작
                         self.cur = time.time()
-                        # 녹색 구간 내 5초 이상인 경우 motion tracking 모드 on
-                        if self.cur_modetime - self.pre_modetime > 5:
+                        # 녹색 구간 내 10초 이상인 경우 motion tracking 모드 on
+                        if self.cur_modetime - self.pre_modetime > 10:
                             self.poseflag = True
-
+                        self.poseflag = True
                         # motion tracking 모드 on이 되었을 경우
                         if self.poseflag:
                             # 각 관절 Drawing
@@ -416,7 +419,7 @@ class Kinect:
                                 print("Count : ", motion_dict)
 
                                 # 가장 많이 counting 된 동작 또한 1초 내 최소 15번 이상 감지되어야 해당 동작을 취했다고 판별.
-                                if motion_dict[max_motion] > 15:
+                                if motion_dict[max_motion] > 10:
 
                                     # rxflag는 kinect display로 부터 준비 신호를 받을 때 set 됨.
                                     if self.socket_enable and self.rxflag:
@@ -446,9 +449,9 @@ class Kinect:
                     # Motion tracking 모드 off, only 사람 위치 추정
                     if not self.poseflag:
                         sendpose = 'pexecute ' + str(self.humanloc)
-                        print('Send : ', sendpose)
                         if self.socket_enable and self.rxflag:
-                            self.send(sock=self.clientSock, senddata=sendpose)
+                            print('Send : ', sendpose)
+                            #self.send(sock=self.clientSock, senddata=sendpose)
                             self.lock.acquire()
                             self.rxflag = False
                             self.lock.release()
@@ -464,7 +467,7 @@ class Kinect:
                 # 3, 7 구역을 녹색으로 drawing
                 if i == (self.detect_divider // 2 - 2)  or i == (self.detect_divider // 2 + 2):
                     cv2.line(color_image,(startline + detect_width//self.detect_divider*i,0), (startline + detect_width//self.detect_divider*i,height), (10,200,10), 2)
-                # 나무저 구역 회색으로 drawing
+                # 나머지 구역 회색으로 drawing
                 else:
                     cv2.line(color_image,(startline + detect_width//self.detect_divider*i,0), (startline + detect_width//self.detect_divider*i,height), (150, 150, 150), 1)
 
@@ -486,7 +489,7 @@ class Kinect:
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    azure = Kinect(body_tracking=False, socket_enable=False)
+    azure = Kinect(body_tracking=False, socket_enable=True)
     azure.run_mediapipe()
 
 
